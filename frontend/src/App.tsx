@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useReducer, useRef, useState } from "react";
-import { createPrivateGame } from "./game/api";
+import { cancelStrangerMatch, createPrivateGame, pollStrangerMatch, startStrangerMatch } from "./game/api";
 import { getOrCreateIdentity } from "./game/identity";
 import type { NormalizedPoint } from "./game/geometry";
 import { initialGameUiState, gameUiReducer } from "./game/reducer";
@@ -18,6 +18,8 @@ interface TurnCue {
   turnCount: number;
 }
 
+type StrangerMatchState = { status: "idle" } | { status: "starting" } | { status: "waiting"; ticketId: string };
+
 const TOPO_URL = "https://www.sanejouand.com/fr/art/jeu-de-topo/index.php";
 
 function App() {
@@ -27,6 +29,7 @@ function App() {
   const [shareLabel, setShareLabel] = useState("share game");
   const [finalShareLabel, setFinalShareLabel] = useState("share image");
   const [showHelp, setShowHelp] = useState(false);
+  const [strangerMatch, setStrangerMatch] = useState<StrangerMatchState>({ status: "idle" });
   const [dismissedShareRooms, setDismissedShareRooms] = useState<Set<string>>(() => new Set());
   const [dismissedFinalRooms, setDismissedFinalRooms] = useState<Set<string>>(() => new Set());
   const [boardViewport, setBoardViewport] = useState<ViewportSize | null>(null);
@@ -37,6 +40,7 @@ function App() {
   const [turnCue, setTurnCue] = useState<TurnCue | null>(null);
   const previousPlayableStatus = useRef<"place" | "wait" | null>(null);
   const lastCursorSentAt = useRef(0);
+  const strangerPollAbortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     const onPopState = () => setRoute(readRoute());
@@ -65,9 +69,62 @@ function App() {
     setShareLabel("share game");
     setFinalShareLabel("share image");
     setShowHelp(false);
+    setStrangerMatch({ status: "idle" });
+    strangerPollAbortRef.current?.abort();
     setBoardViewport(null);
     setFinalImage(null);
   }, [route.roomId]);
+
+  useEffect(() => {
+    if (route.isPrivate || strangerMatch.status !== "waiting") {
+      return;
+    }
+    let active = true;
+    const controller = new AbortController();
+    strangerPollAbortRef.current = controller;
+
+    const poll = async () => {
+      while (active) {
+        try {
+          const result = await pollStrangerMatch(strangerMatch.ticketId, identity.clientId, controller.signal);
+          if (!active) {
+            return;
+          }
+          if (result.status === "matched") {
+            setStrangerMatch({ status: "idle" });
+            navigate(result.url, setRoute);
+            dispatch({ type: "set_preview", point: null });
+            return;
+          }
+          if (result.status === "expired") {
+            setStrangerMatch({ status: "idle" });
+            dispatch({ type: "error", message: "No stranger found. Try again." });
+            return;
+          }
+          if (result.status === "canceled") {
+            setStrangerMatch({ status: "idle" });
+            return;
+          }
+        } catch (error) {
+          if (!active || isAbortError(error)) {
+            return;
+          }
+          setStrangerMatch({ status: "idle" });
+          dispatch({ type: "error", message: "Could not find a stranger." });
+          return;
+        }
+      }
+    };
+
+    poll();
+    return () => {
+      active = false;
+      controller.abort();
+      if (strangerPollAbortRef.current === controller) {
+        strangerPollAbortRef.current = null;
+      }
+    };
+  }, [identity.clientId, route.isPrivate, strangerMatch]);
 
   const state = ui.server;
   const playerTurnCount = countPlayerTurns(state);
@@ -141,6 +198,9 @@ function App() {
   }, [boardViewport, dismissedFinalRooms, route.roomId, state?.points, state?.room.locked, viewTransform]);
 
   const handleCreatePrivate = async () => {
+    if (strangerMatch.status !== "idle") {
+      return;
+    }
     setCreatingPrivate(true);
     try {
       const game = await createPrivateGame();
@@ -150,6 +210,46 @@ function App() {
       dispatch({ type: "error", message: error instanceof Error ? error.message : "Could not create game." });
     } finally {
       setCreatingPrivate(false);
+    }
+  };
+
+  const handlePlayStranger = async () => {
+    if (strangerMatch.status !== "idle") {
+      return;
+    }
+    setStrangerMatch({ status: "starting" });
+    dispatch({ type: "error", message: null });
+    try {
+      const result = await startStrangerMatch(identity.clientId);
+      if (result.status === "matched") {
+        setStrangerMatch({ status: "idle" });
+        navigate(result.url, setRoute);
+        dispatch({ type: "set_preview", point: null });
+      } else if (result.status === "waiting") {
+        setStrangerMatch({ status: "waiting", ticketId: result.ticketId });
+      } else if (result.status === "expired") {
+        setStrangerMatch({ status: "idle" });
+        dispatch({ type: "error", message: "No stranger found. Try again." });
+      } else {
+        setStrangerMatch({ status: "idle" });
+      }
+    } catch (error) {
+      setStrangerMatch({ status: "idle" });
+      dispatch({ type: "error", message: error instanceof Error ? error.message : "Could not find a stranger." });
+    }
+  };
+
+  const handleCancelStranger = async () => {
+    if (strangerMatch.status !== "waiting") {
+      return;
+    }
+    const ticketId = strangerMatch.ticketId;
+    strangerPollAbortRef.current?.abort();
+    setStrangerMatch({ status: "idle" });
+    try {
+      await cancelStrangerMatch(ticketId, identity.clientId);
+    } catch (error) {
+      dispatch({ type: "error", message: error instanceof Error ? error.message : "Could not cancel matchmaking." });
     }
   };
 
@@ -273,9 +373,19 @@ function App() {
             about
           </button>
         ) : null}
-        <button onClick={handleCreatePrivate} disabled={creatingPrivate}>
+        <button onClick={handleCreatePrivate} disabled={creatingPrivate || strangerMatch.status !== "idle"}>
           {creatingPrivate ? "creating tessellation" : "new tessellation"}
         </button>
+        {!route.isPrivate ? (
+          <button onClick={handlePlayStranger} disabled={creatingPrivate || strangerMatch.status !== "idle"} type="button">
+            {strangerMatch.status === "idle" ? "play with stranger" : "finding stranger"}
+          </button>
+        ) : null}
+        {!route.isPrivate && strangerMatch.status === "waiting" ? (
+          <button onClick={handleCancelStranger} type="button">
+            cancel
+          </button>
+        ) : null}
         {route.isPrivate ? (
           <button onClick={handleShare}>{shareLabel === "share game" ? "share this game" : shareLabel}</button>
         ) : null}
@@ -502,6 +612,10 @@ function downloadBlob(url: string, filename: string) {
   document.body.appendChild(anchor);
   anchor.click();
   anchor.remove();
+}
+
+function isAbortError(error: unknown) {
+  return error instanceof DOMException && error.name === "AbortError";
 }
 
 function readRoute() {

@@ -142,3 +142,98 @@ def test_cursor_state_clears_without_persistence(tmp_path: Path) -> None:
 
     assert manager._presence[room_id]["alice"].cursor is None
     assert store.get_state(room_id, {"alice"})["cursors"] == []
+
+
+def test_stranger_matchmaking_waits_for_first_player(tmp_path: Path) -> None:
+    store = GameStore(tmp_path / "game.sqlite3")
+    store.initialize()
+    matchmaker = main.StrangerMatchmaker(store)
+
+    response = asyncio.run(matchmaker.request_match("alice"))
+
+    assert response["status"] == "waiting"
+    assert response["ticketId"]
+
+
+def test_stranger_matchmaking_pairs_two_different_players(tmp_path: Path) -> None:
+    store = GameStore(tmp_path / "game.sqlite3")
+    store.initialize()
+    matchmaker = main.StrangerMatchmaker(store)
+
+    async def match_players() -> tuple[dict[str, str], dict[str, str]]:
+        waiting = await matchmaker.request_match("alice")
+        matched = await matchmaker.request_match("bob")
+        alice_result = await matchmaker.poll_match(waiting["ticketId"], "alice", timeout_seconds=0)
+        return matched, alice_result
+
+    matched, alice_result = asyncio.run(match_players())
+
+    assert matched["status"] == "matched"
+    assert alice_result == matched
+    assert store.room_exists(matched["roomId"])
+    assert matched["url"] == f"/g/{matched['roomId']}"
+
+
+def test_stranger_matchmaking_does_not_match_same_client(tmp_path: Path) -> None:
+    store = GameStore(tmp_path / "game.sqlite3")
+    store.initialize()
+    matchmaker = main.StrangerMatchmaker(store)
+
+    async def request_twice() -> tuple[dict[str, str], dict[str, str]]:
+        first = await matchmaker.request_match("alice")
+        second = await matchmaker.request_match("alice")
+        return first, second
+
+    first, second = asyncio.run(request_twice())
+
+    assert first["status"] == "waiting"
+    assert second == first
+
+
+def test_stranger_matchmaking_does_not_reuse_old_match_for_new_request(tmp_path: Path) -> None:
+    store = GameStore(tmp_path / "game.sqlite3")
+    store.initialize()
+    matchmaker = main.StrangerMatchmaker(store)
+
+    async def match_then_request_again() -> dict[str, str]:
+        await matchmaker.request_match("alice")
+        await matchmaker.request_match("bob")
+        return await matchmaker.request_match("alice")
+
+    response = asyncio.run(match_then_request_again())
+
+    assert response["status"] == "waiting"
+    assert response["ticketId"]
+
+
+def test_stranger_matchmaking_cancel_removes_waiting_ticket(tmp_path: Path) -> None:
+    store = GameStore(tmp_path / "game.sqlite3")
+    store.initialize()
+    matchmaker = main.StrangerMatchmaker(store)
+
+    async def cancel_waiting() -> dict[str, str]:
+        waiting = await matchmaker.request_match("alice")
+        return await matchmaker.cancel_match(waiting["ticketId"], "alice")
+
+    response = asyncio.run(cancel_waiting())
+
+    assert response == {"status": "canceled"}
+    assert matchmaker._waiting_ticket_ids == []
+
+
+def test_stranger_matchmaking_expires_stale_tickets(tmp_path: Path) -> None:
+    store = GameStore(tmp_path / "game.sqlite3")
+    store.initialize()
+    now = 100.0
+    matchmaker = main.StrangerMatchmaker(store, stale_seconds=10, now=lambda: now)
+
+    async def expire_waiting() -> dict[str, str]:
+        nonlocal now
+        waiting = await matchmaker.request_match("alice")
+        now = 111.0
+        return await matchmaker.poll_match(waiting["ticketId"], "alice", timeout_seconds=0)
+
+    response = asyncio.run(expire_waiting())
+
+    assert response == {"status": "expired"}
+    assert matchmaker._waiting_ticket_ids == []

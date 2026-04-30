@@ -2,6 +2,18 @@
 
 A mobile-friendly multiplayer Voronoi canvas game. Players place colored points, everyone sees the shared Voronoi diagram update over WebSockets, and a game locks when every connected player says they are happy with the result.
 
+Live deployment: [voronoi.charlespierre.fr](https://voronoi.charlespierre.fr)
+
+## Concept / Help Text
+
+A multiplayer hommage to Jean-Michel Sanejouand's [Jeu de Topo (1963)](https://www.sanejouand.com/fr/art/jeu-de-topo/index.php), a game with no winner or loser where partners arrange stones until both points of view are satisfied.
+
+Here, stones become colored points in a game based on [Voronoi diagrams](https://en.wikipedia.org/wiki/Voronoi_diagram). The original opposing points of view become each player's screen: everyone shares the same points, but phones, tablets, and browser windows frame the space differently, so each player is likely seeing a different Voronoi view.
+
+When two screens are too similar, the game may mirror one board so the points of view diverge.
+
+[by charlespierre.fr](https://charlespierre.fr)
+
 ## Run locally
 
 ```bash

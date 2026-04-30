@@ -82,7 +82,6 @@ def test_enrich_state_adds_ephemeral_cursor_and_transform(tmp_path: Path) -> Non
     assert state["cursors"] == [
         {
             "playerId": "alice",
-            "name": "Alice",
             "color": "#111111",
             "x": 0.2,
             "y": 0.8,
@@ -90,6 +89,7 @@ def test_enrich_state_adds_ephemeral_cursor_and_transform(tmp_path: Path) -> Non
             "updatedAt": 1234,
         }
     ]
+    assert "name" not in state["cursors"][0]
 
     reloaded = GameStore(tmp_path / "game.sqlite3")
     reloaded.initialize()

@@ -285,7 +285,6 @@ def enrich_state_with_presence(state: dict, presence: dict[str, PlayerPresence])
         cursors.append(
             {
                 "playerId": player_id,
-                "name": player["name"] if player else "Player",
                 "color": player["color"] if player else "#11181c",
                 "x": current.cursor.x,
                 "y": current.cursor.y,

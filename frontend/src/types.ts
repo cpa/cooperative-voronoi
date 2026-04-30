@@ -50,7 +50,6 @@ export type ConnectionStatus = "connecting" | "open" | "closed" | "error";
 
 export interface CursorPresence {
   playerId: string;
-  name: string;
   color: string;
   x: number;
   y: number;

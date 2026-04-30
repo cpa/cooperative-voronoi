@@ -150,7 +150,6 @@ describe("GameCanvas", () => {
           remoteCursors={[
             {
               playerId: "other",
-              name: "Other",
               color: "#111111",
               x: 0.5,
               y: 0.5,

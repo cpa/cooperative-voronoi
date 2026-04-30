@@ -1,0 +1,11 @@
+{
+  "name": "multiplayer-voronoi",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "dev:frontend": "npm --prefix frontend run dev -- --host 127.0.0.1",
+    "dev:backend": "cd backend && uv run uvicorn app.main:app --reload --host 127.0.0.1 --port 8000",
+    "build": "npm --prefix frontend run build",
+    "test": "npm --prefix frontend test -- --run && cd backend && uv run pytest"
+  }
+}

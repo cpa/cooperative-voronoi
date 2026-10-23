@@ -16,8 +16,13 @@ When two screens are too similar, the game may mirror one board so the points of
 
 ## Run locally
 
+Use Node.js 24.22.1 LTS (pinned in `.nvmrc`), or a newer patched release in
+the 24.x or 26.x line (26.12.1 minimum). Node.js 20 is end of life.
+The minimum versions include the [Node2Shell / CVE-2026-111497 Brotli decoder fix](https://nodejs.org/en/blog/vulnerability/october-2026-security-releases).
+Python 3.13.17 (pinned in `backend/.python-version`) and `uv` are also required.
+
 ```bash
-npm install --prefix frontend
+npm ci --prefix frontend
 cd backend && uv sync
 ```
 
@@ -56,6 +61,11 @@ Production runs on `ubuntu@57.128.27.117`.
 - Reverse proxy: Caddy proxies `/api/*` and `/ws/*` to `8100`, and the rest to `3100`.
 
 `start.sh` is the production deploy script that must be copied to the server with the rest of the repo. It installs frontend dependencies with `npm ci`, builds the frontend, syncs backend dependencies with `uv sync --frozen --no-dev`, then restarts the `voronoi` tmux session.
+
+The script rejects Node.js versions below the patched minimum before installing
+dependencies or stopping the running application. Production uses Node.js 24 LTS.
+When upgrading the server runtime, restart every service using that runtime;
+existing processes retain the old executable until restarted.
 
 From the repo root, deploy the current working tree:
 

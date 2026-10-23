@@ -8,6 +8,16 @@ FRONTEND_PORT="${FRONTEND_PORT:-3100}"
 
 cd "$APP_DIR"
 
+node --input-type=module -e '
+  const [major, minor, patch] = process.versions.node.split(".").map(Number);
+  const supported = (major === 24 && (minor > 22 || (minor === 22 && patch >= 1)))
+    || (major === 26 && (minor > 12 || (minor === 12 && patch >= 1)));
+  if (!supported) {
+    console.error(`Node.js ${process.versions.node} is unsupported. Use 24.22.1+ LTS or 26.12.1+ within those major versions (CVE-2026-111497).`);
+    process.exit(1);
+  }
+'
+
 npm --prefix frontend ci
 npm --prefix frontend run build
 

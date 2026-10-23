@@ -7,5 +7,8 @@
     "dev:backend": "cd backend && uv run uvicorn app.main:app --reload --host 127.0.0.1 --port 8000",
     "build": "npm --prefix frontend run build",
     "test": "npm --prefix frontend test -- --run && cd backend && uv run pytest"
+  },
+  "engines": {
+    "node": "^24.22.1 || ^26.12.1"
   }
 }
